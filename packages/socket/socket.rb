@@ -327,9 +327,7 @@ class BasicSocket
 end
 
 class Socket < BasicSocket
-  def connect(sockaddr); self.connect(sockaddr); 0; end
-  def bind(sockaddr); self.bind(sockaddr); 0; end
-  def listen(backlog); self.listen(backlog); 0; end
+  # connect/bind/listen are provided by native_method bindings; do not override them here.
   def accept; Socket.new(SocketN.accept_raw(self)); end
   def sysaccept; self.accept; end
 
