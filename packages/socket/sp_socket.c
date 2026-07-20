@@ -503,11 +503,12 @@ sp_Socket *sp_UNIXSocket_new(mrb_int cls_id, const char *path) {
   const char *bin = sp_socket_pack_un(path, &len);
   struct sockaddr_storage ss;
   if (sp_socket_unpack(bin, len, &ss) < 0) sp_raise_cls("SocketError", "invalid unix path");
-  int fd = sp_socket_open(AF_UNIX, SOCK_STREAM, 0);
-  if (fd < 0) sp_raise_cls("Errno::EAFNOSUPPORT", "socket(2)");
-  if (sp_socket_connect(fd, (struct sockaddr *)&ss, len) < 0) {
-    sp_socket_close(fd);
-    sp_raise_cls("Errno::ECONNREFUSED", "failed to connect (unix)");
+  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (fd < 0) raise_syserr("socket", errno);
+  if (connect(fd, (struct sockaddr *)&ss, (socklen_t)len) < 0) {
+    int err = errno;
+    close(fd);
+    raise_syserr("connect", err);
   }
   return sp_Socket_from_fd(cls_id, fd, AF_UNIX, SOCK_STREAM, 0);
 }
