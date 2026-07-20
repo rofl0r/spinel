@@ -894,7 +894,8 @@ const char *sp_BasicSocket_recv(sp_Socket *s, int len) {
 }
 
 int sp_BasicSocket_send(sp_Socket *s, const char *buf) {
-  return sp_socket_send(s->fd, buf, (int)strlen(buf), 0);
+  int len = buf ? (int)sp_str_byte_len(buf) : 0;
+  return sp_socket_send(s->fd, buf, len, 0);
 }
 
 int sp_BasicSocket_fileno(sp_Socket *s) { return s->fd; }
