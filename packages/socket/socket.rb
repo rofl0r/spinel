@@ -420,7 +420,7 @@ class UDPSocket < IPSocket
       ai = Addrinfo.getaddrinfo(host.to_s, port.to_i, Socket::AF_INET, :DGRAM)[0]
       self.sendto(mesg, flags, ai.to_sockaddr)
     else
-      self.send(mesg)
+      self.sendmsg(mesg)
     end
   end
   def recvfrom_nonblock(len, flag = 0, outbuf = nil, exception: true); self.recvfrom(len, flag); end
