@@ -582,7 +582,8 @@ int sp_Socket_sendto_raw(sp_Socket *s, const char *buf, int flags,
   int len = sa ? (int)sp_str_byte_len(sa) : 0;
   struct sockaddr_storage ss;
   if (!sa || sp_socket_unpack(sa, len, &ss) < 0) sp_raise_cls("SocketError", "invalid sockaddr");
-  return sp_socket_sendto(s->fd, buf, (int)strlen(buf), flags,
+  int buflen = buf ? (int)sp_str_byte_len(buf) : 0;
+  return sp_socket_sendto(s->fd, buf, buflen, flags,
                           (struct sockaddr *)&ss, len);
 }
 
