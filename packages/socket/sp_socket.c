@@ -568,8 +568,9 @@ int sp_Socket_accept_one_raw(sp_RbVal sock_val) {
 }
 
 /* Socket#accept (instance op): same, but takes the native sp_Socket* directly. */
-int sp_Socket_accept_raw(sp_Socket *s) {
-  return sp_socket_accept(s->fd);
+int sp_Socket_send_raw(sp_Socket *s, const char *buf, int flags) {
+  int len = buf ? (int)sp_str_byte_len(buf) : 0;
+  return sp_socket_send(s->fd, buf, len, flags);
 }
 
 /* Socket#send / #sendto (instance ops). */
