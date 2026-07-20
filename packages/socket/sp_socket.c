@@ -706,7 +706,8 @@ sp_RbVal sp_BasicSocket_recvfrom_raw(sp_Socket *s, int len) {
 
 /* BasicSocket#sendmsg: behaves like #send (single buffer). */
 int sp_BasicSocket_sendmsg(sp_Socket *s, const char *buf) {
-  int rr = sp_socket_send(s->fd, buf, (int)strlen(buf), 0);
+  int len = buf ? (int)sp_str_byte_len(buf) : 0;
+  int rr = sp_socket_send(s->fd, buf, len, 0);
   return rr;
 }
 
