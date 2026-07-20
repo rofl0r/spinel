@@ -718,14 +718,11 @@ sp_RbVal sp_BasicSocket_recvmsg_raw(sp_Socket *s, int len) {
 
 /* BasicSocket#read_nonblock / write_nonblock: recv/send wrappers. */
 const char *sp_BasicSocket_read_nonblock(sp_Socket *s, int len) {
-  char *buf = (char *)malloc((size_t)(len > 0 ? len : 1));
-  if (!buf) sp_oom_die();
-  int n = sp_socket_recv(s->fd, buf, len, 0);
-  if (n <= 0) { free(buf); return sp_str_empty; }
-  char *mesg = (char *)sp_str_alloc((size_t)n);
-  memcpy(mesg, buf, (size_t)n);
+  if (len < 0) len = 0;
+  char *mesg = (char *)sp_str_alloc((size_t)len > 0 ? (size_t)len : 1);
+  int n = sp_socket_recv(s->fd, mesg, len, 0);
+  if (n <= 0) return sp_str_empty;
   sp_str_set_len(mesg, (size_t)n);
-  free(buf);
   return mesg;
 }
 int sp_BasicSocket_write_nonblock(sp_Socket *s, const char *buf) {
