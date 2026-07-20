@@ -439,28 +439,33 @@ sp_Socket *sp_TCPServer_new(mrb_int cls_id, const char *host, int port) {
      string (sp_box_str) we can unpack into a sockaddr_storage for bind. The
      Addrinfo-returning helper (sp_socket_getaddrinfo) is for the Ruby-level
      Addrinfo API, not for low-level bind/connect. */
-    char pbuf[16];
+  char pbuf[16];
   sp_RbVal res = sp_Socket_getaddrinfo_strings(host, sp_port_str(port, pbuf, sizeof pbuf), AF_UNSPEC, SOCK_STREAM, 0, AI_PASSIVE);
   sp_PolyArray *arr = sp_rb_to_poly_array(res);
   SP_GC_ROOT(arr);
   if (!arr || arr->len == 0) sp_raise_cls("SocketError", "no address for bind");
+  int last_err = 0;
   for (mrb_int i = 0; i < arr->len; i++) {
     sp_RbVal el = sp_PolyArray_get(arr, i);
     const char *bin = sp_rb_to_cstr(el);
     int len = bin ? (int)sp_str_byte_len(bin) : 0;
     struct sockaddr_storage ss;
     if (!bin || sp_socket_unpack(bin, len, &ss) < 0) continue;
-    int fd = sp_socket_open((int)ss.ss_family, SOCK_STREAM, 0);
-    if (fd < 0) continue;
+    int fd = socket((int)ss.ss_family, SOCK_STREAM, 0);
+    if (fd < 0) {
+      last_err = errno;
+      continue;
+    }
     sp_socket_setopt_reuseaddr(fd);
-    if (sp_socket_bind(fd, (struct sockaddr *)&ss, len) == 0 &&
-        sp_socket_listen(fd, SOMAXCONN) == 0) {
+    if (bind(fd, (struct sockaddr *)&ss, (socklen_t)len) == 0 &&
+        listen(fd, SOMAXCONN) == 0) {
       sp_Socket *s = sp_Socket_from_fd(cls_id, fd, (int)ss.ss_family, SOCK_STREAM, 0);
       return s;
     }
-    sp_socket_close(fd);
+    last_err = errno;
+    close(fd);
   }
-  sp_raise_cls("Errno::EADDRINUSE", "failed to bind");
+  raise_syserr("bind", last_err);
   return NULL;
 }
 
