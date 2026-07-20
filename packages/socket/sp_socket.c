@@ -412,7 +412,8 @@ sp_Socket *sp_TCPSocket_new(mrb_int cls_id, const char *host, int port) {
   sp_PolyArray *arr = sp_rb_to_poly_array(res);
   SP_GC_ROOT(arr);
   if (!arr || arr->len == 0) sp_raise_cls("SocketError", "no address for connect");
-  int last_err = 0;\n  for (mrb_int i = 0; i < arr->len; i++) {
+  int last_err = 0;
+  for (mrb_int i = 0; i < arr->len; i++) {
     sp_RbVal el = sp_PolyArray_get(arr, i);
     const char *bin = sp_rb_to_cstr(el);
     int len = bin ? (int)sp_str_byte_len(bin) : 0;
