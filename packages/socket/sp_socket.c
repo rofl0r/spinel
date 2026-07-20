@@ -122,6 +122,7 @@ int sp_socket_close(int fd) {
 
 int sp_socket_send(int fd, const char *buf, int len, int flags) {
   ssize_t n = send(fd, buf, (size_t)len, flags);
+  if (n < 0) { raise_syserr("send", errno); }
   return (int)n;
 }
 
