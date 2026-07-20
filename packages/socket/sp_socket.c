@@ -518,12 +518,17 @@ sp_Socket *sp_UNIXServer_new(mrb_int cls_id, const char *path) {
   const char *bin = sp_socket_pack_un(path, &len);
   struct sockaddr_storage ss;
   if (sp_socket_unpack(bin, len, &ss) < 0) sp_raise_cls("SocketError", "invalid unix path");
-  int fd = sp_socket_open(AF_UNIX, SOCK_STREAM, 0);
-  if (fd < 0) sp_raise_cls("Errno::EAFNOSUPPORT", "socket(2)");
-  if (sp_socket_bind(fd, (struct sockaddr *)&ss, len) < 0 ||
-      sp_socket_listen(fd, SOMAXCONN) < 0) {
-    sp_socket_close(fd);
-    sp_raise_cls("Errno::EADDRINUSE", "failed to bind (unix)");
+  int fd = socket(AF_UNIX, SOCK_STREAM, 0);
+  if (fd < 0) raise_syserr("socket", errno);
+  if (bind(fd, (struct sockaddr *)&ss, (socklen_t)len) < 0) {
+    int err = errno;
+    close(fd);
+    raise_syserr("bind", err);
+  }
+  if (listen(fd, SOMAXCONN) < 0) {
+    int err = errno;
+    close(fd);
+    raise_syserr("listen", err);
   }
   return sp_Socket_from_fd(cls_id, fd, AF_UNIX, SOCK_STREAM, 0);
 }
