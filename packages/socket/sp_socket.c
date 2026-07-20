@@ -618,13 +618,16 @@ const char *sp_Socket_pack_un_wrap(const char *path) {
   int len; return sp_socket_pack_un(path, &len);
 }
 const char *sp_Socket_in_addr_wrap(const char *sa) {
-  return sp_socket_in_addr(sa, (int)sp_str_byte_len(sa));
+  int len = sa ? (int)sp_str_byte_len(sa) : 0;
+  return sp_socket_in_addr(sa, len);
 }
 int sp_Socket_in_port_wrap(const char *sa) {
-  return sp_socket_in_port(sa, (int)sp_str_byte_len(sa));
+  int len = sa ? (int)sp_str_byte_len(sa) : 0;
+  return sp_socket_in_port(sa, len);
 }
 const char *sp_Socket_un_path_wrap(const char *sa) {
-  return sp_socket_un_path(sa, (int)sp_str_byte_len(sa));
+  int len = sa ? (int)sp_str_byte_len(sa) : 0;
+  return sp_socket_un_path(sa, len);
 }
 int sp_Socket_family_wrap(const char *sa) {
   struct sockaddr_storage ss;
