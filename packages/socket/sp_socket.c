@@ -64,7 +64,8 @@ static void raise_syserr(const char *syscall, int err) {
     case ETIMEDOUT: name = "Errno::ETIMEDOUT"; break;
     default: break;
   }
-  sp_raise_cls(name, sock_err(""));
+  errno = err;
+  sp_raise_cls(name, sock_err(syscall));
 }
 
 /* ------------------------------------------------------------------ */
