@@ -476,13 +476,18 @@ sp_Socket *sp_TCPServer_new_port(mrb_int cls_id, int port) {
   sin.sin_family = AF_INET;
   sin.sin_port = htons((uint16_t)port);
   sin.sin_addr.s_addr = htonl(INADDR_ANY);
-  int fd = sp_socket_open(AF_INET, SOCK_STREAM, 0);
-  if (fd < 0) sp_raise_cls("Errno::EAFNOSUPPORT", "socket(2)");
+  int fd = socket(AF_INET, SOCK_STREAM, 0);
+  if (fd < 0) raise_syserr("socket", errno);
   sp_socket_setopt_reuseaddr(fd);
-  if (sp_socket_bind(fd, (struct sockaddr *)&sin, sizeof sin) < 0 ||
-      sp_socket_listen(fd, SOMAXCONN) < 0) {
-    sp_socket_close(fd);
-    sp_raise_cls("Errno::EADDRINUSE", "failed to bind");
+  if (bind(fd, (struct sockaddr *)&sin, sizeof sin) < 0) {
+    int err = errno;
+    close(fd);
+    raise_syserr("bind", err);
+  }
+  if (listen(fd, SOMAXCONN) < 0) {
+    int err = errno;
+    close(fd);
+    raise_syserr("listen", err);
   }
   return sp_Socket_from_fd(cls_id, fd, AF_INET, SOCK_STREAM, 0);
 }
