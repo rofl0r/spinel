@@ -686,16 +686,13 @@ int sp_BasicSocket_close(sp_Socket *s) {
    The caller (Ruby recvfrom wrapper) builds a pure-Ruby Addrinfo from the
    binary sockaddr so accessors (which read @sockaddr) work. */
 sp_RbVal sp_BasicSocket_recvfrom_raw(sp_Socket *s, int len) {
-  char *buf = (char *)malloc((size_t)(len > 0 ? len : 1));
-  if (!buf) sp_oom_die();
+  if (len < 0) len = 0;
+  char *mesg = (char *)sp_str_alloc((size_t)len > 0 ? (size_t)len : 1);
   struct sockaddr_storage from;
   int fromlen = (int)sizeof from;
-  int n = sp_socket_recvfrom(s->fd, buf, len, 0, (struct sockaddr *)&from, &fromlen);
-  if (n < 0) { free(buf); return sp_box_nil(); }
-  char *mesg = (char *)sp_str_alloc((size_t)n);
-  memcpy(mesg, buf, (size_t)n);
+  int n = sp_socket_recvfrom(s->fd, mesg, len, 0, (struct sockaddr *)&from, &fromlen);
+  if (n < 0) return sp_box_nil();
   sp_str_set_len(mesg, (size_t)n);
-  free(buf);
   char *bin = (char *)sp_str_alloc((size_t)fromlen);
   memcpy(bin, &from, (size_t)fromlen);
   sp_str_set_len(bin, (size_t)fromlen);
