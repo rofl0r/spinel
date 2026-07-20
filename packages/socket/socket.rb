@@ -478,6 +478,9 @@ class Addrinfo
     if af == "AF_INET" || af == :INET || af == Socket::AF_INET
       bin = Socket.sockaddr_in(port, host)
       fam = Socket::AF_INET
+    elsif af == "AF_INET6" || af == :INET6 || af == Socket::AF_INET6
+      bin = Socket.sockaddr_in(port, host)
+      fam = Socket::AF_INET6
     elsif af == "AF_UNIX" || af == :UNIX || af == Socket::AF_UNIX
       bin = Socket.sockaddr_un(host)
       fam = Socket::AF_UNIX
