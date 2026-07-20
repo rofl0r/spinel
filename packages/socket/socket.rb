@@ -337,8 +337,8 @@ class Socket < BasicSocket
 
   def self.getnameinfo(*args); nil; end
   def self.gethostname; SocketN.gethostname; end
-  def self.getservbyname(name, proto = "tcp"); SocketN.getservbyname(name); end
-  def self.getservbyport(port, proto = "tcp"); SocketN.getservbyport(port); end
+  def self.getservbyname(name, proto = "tcp"); SocketN.getservbyname(name.to_s, proto.to_s); end
+  def self.getservbyport(port, proto = "tcp"); SocketN.getservbyport(port.to_i, proto.to_s); end
   def self.sockaddr_in(port, host); SocketN.sockaddr_in(host.to_s, port); end
   def self.pack_sockaddr_in(port, host); SocketN.sockaddr_in(host.to_s, port); end
   def self.unpack_sockaddr_in(sockaddr)
