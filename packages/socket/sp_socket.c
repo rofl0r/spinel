@@ -726,7 +726,8 @@ const char *sp_BasicSocket_read_nonblock(sp_Socket *s, int len) {
   return mesg;
 }
 int sp_BasicSocket_write_nonblock(sp_Socket *s, const char *buf) {
-  return sp_socket_send(s->fd, buf, (int)strlen(buf), 0);
+  int len = buf ? (int)sp_str_byte_len(buf) : 0;
+  return sp_socket_send(s->fd, buf, len, 0);
 }
 
 /* BasicSocket#local_address / #remote_address: boxed Addrinfo. */
