@@ -194,8 +194,10 @@ const char *sp_socket_pack_in(const char *host, int port, int *outlen) {
   hints.ai_family = AF_UNSPEC;
   char portbuf[16];
   snprintf(portbuf, sizeof portbuf, "%d", port);
-  if (getaddrinfo(host, portbuf, &hints, &res) != 0 || !res) {
-    sp_raise_cls("SocketError", sock_err("getaddrinfo"));
+  int err = getaddrinfo(host, portbuf, &hints, &res);
+  if (err != 0 || !res) {
+     sp_raise_cls("SocketError",
+                  (const char *)(gai_strerror(err) ? gai_strerror(err) : "getaddrinfo"));
   }
   /* Prefer an IPv4 result if available, else the first. */
   struct addrinfo *ai = res;
