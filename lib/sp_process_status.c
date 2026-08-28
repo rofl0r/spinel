@@ -45,22 +45,32 @@ sp_RbVal sp_box_process_status(sp_ProcessStatus *p) {
 }
 
 /* ---- predicates ---- */
+/* The macOS W* macros take the address of their argument
+   (*(int *)&(w) inside _W_INT), so the argument must be an lvalue.
+   The Linux macros are pure expressions and accept rvalues. Bind the
+   cast to a local so the same source compiles on both. Each function
+   gets its own _sp_st scope, so a single fixed name is safe. */
+#define SP_STATUS_WORD(s) int _sp_st = (int)(s)
 
 int sp_process_status_exited_p(sp_int s) {
-  return WIFEXITED((int)s) ? 1 : 0;
+  SP_STATUS_WORD(s);
+  return WIFEXITED(_sp_st) ? 1 : 0;
 }
 
 int sp_process_status_signaled_p(sp_int s) {
-  return WIFSIGNALED((int)s) ? 1 : 0;
+  SP_STATUS_WORD(s);
+  return WIFSIGNALED(_sp_st) ? 1 : 0;
 }
 
 int sp_process_status_coredump_p(sp_int s) {
-  if (!WIFSIGNALED((int)s)) return 0;
-  return WCOREDUMP((int)s) ? 1 : 0;
+  SP_STATUS_WORD(s);
+  if (!WIFSIGNALED(_sp_st)) return 0;
+  return WCOREDUMP(_sp_st) ? 1 : 0;
 }
 
 int sp_process_status_success_p(sp_int s) {
-  return (WIFEXITED((int)s) && WEXITSTATUS((int)s) == 0) ? 1 : 0;
+  SP_STATUS_WORD(s);
+  return (WIFEXITED(_sp_st) && WEXITSTATUS(_sp_st) == 0) ? 1 : 0;
 }
 
 /* ---- accessors ---- */
@@ -80,13 +90,15 @@ sp_int sp_process_status_pid(sp_int s) {
 }
 
 sp_int sp_process_status_exitstatus(sp_int s) {
-  if (!WIFEXITED((int)s)) return SP_STATUS_NIL;
-  return (sp_int)WEXITSTATUS((int)s);
+  SP_STATUS_WORD(s);
+  if (!WIFEXITED(_sp_st)) return SP_STATUS_NIL;
+  return (sp_int)WEXITSTATUS(_sp_st);
 }
 
 sp_int sp_process_status_termsig(sp_int s) {
-  if (!WIFSIGNALED((int)s)) return SP_STATUS_NIL;
-  return (sp_int)WTERMSIG((int)s);
+  SP_STATUS_WORD(s);
+  if (!WIFSIGNALED(_sp_st)) return SP_STATUS_NIL;
+  return (sp_int)WTERMSIG(_sp_st);
 }
 
 /* ---- boxed-struct pid access ---- */
