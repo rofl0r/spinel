@@ -312,6 +312,7 @@ static sp_runq    g_lrq[SP_MAX_WORKERS]; /* per-worker local run queues (rerun l
 static int        g_runnable = 0;        /* threads sitting in any run queue right now */
 static int        g_nrunning = 0;        /* workers currently executing a green thread (quiescence) */
 static sp_thread *g_sleepers = NULL;     /* threads parked in Kernel#sleep, woken by deadline */
+static sp_thread *g_blocked_with_deadline = NULL; /* threads parked on a waitlist (e.g. t->joiners) with a deadline; the monitor wakes them when the deadline passes */
 static sp_thread *g_io_waiters = NULL;    /* threads parked on a fd, woken by the monitor's poll */
 static struct pollfd *g_pfds = NULL;     /* monitor's poll set, rebuilt from g_io_waiters each tick */
 static sp_thread    **g_pths = NULL;     /* parallel to g_pfds: the thread waiting on each fd */
@@ -549,6 +550,8 @@ static void sp_thread_report(sp_thread *t) {
 
 /* Park/wake primitives (defined below; used by join here). */
 static void       sp_sched_block(sp_thread **waitlist);
+static void       sp_sched_block_timeout(sp_thread **waitlist, double seconds);
+static void       sp_sched_unblock_deadline(sp_thread *t);
 static sp_thread *sp_sched_wake_one(sp_thread **waitlist);
 
 /* A finished thread's parked joiners become runnable again (the main thread,
@@ -843,23 +846,16 @@ sp_thread *sp_Thread_join_timeout(sp_thread *t, double seconds) {
   if (dead) { sp_thread_reraise_if_exc(t); return t; }
 
   if (seconds <= 0) return NULL;
-  /* Poll with bounded sp_sleep chunks. Each chunk parks the caller on
-     g_sleepers with a short deadline (the monitor wakes it), so the
-     scheduler runs other threads and there is no CPU burn. Between
-     sleeps we recheck the target's state and return early if it has
-     finished. The chunk size is the responsiveness bound: smaller
-     values react faster to the target dying but wake more often.
-     1ms matches the g_sleepers' monitor tick granularity. */
-  double remaining = seconds;
-  while (remaining > 0) {
-    double chunk = remaining < 0.001 ? remaining : 0.001;
-    sp_sleep(chunk);
-    SCHED_LOCK();
-    dead = (t->state == SP_TH_DEAD);
-    SCHED_UNLOCK();
-    if (dead) { sp_thread_reraise_if_exc(t); return t; }
-    remaining -= chunk;
-  }
+  /* Park on t->joiners (the no-arg join's waitlist) with a deadline. The
+     scheduler's monitor thread wakes us when the deadline fires; the
+     target's death path wakes us via the same waitlist if it finishes
+     first. No polling, no per-ms kernel transitions -- one parking,
+     one wakeup. */
+  SCHED_LOCK();
+  sp_sched_block_timeout(&t->joiners, seconds);
+  SCHED_UNLOCK();
+  dead = (t->state == SP_TH_DEAD);
+  if (dead) { sp_thread_reraise_if_exc(t); return t; }
   return NULL;
 }
 
@@ -1014,6 +1010,31 @@ static void *sp_sysmon_main(void *arg) {
       else {
         if (nearest == 0.0 || t->wake_deadline < nearest) nearest = t->wake_deadline;
         pp = &t->wait_next;
+      }
+    }
+    /* Same expiry check for threads parked on a waitlist with a deadline
+       (e.g. Thread#join(timeout)): the target dying would have removed the
+       thread from g_blocked_with_deadline via sp_sched_wake_one, so any
+       thread still on this list is here because its deadline fired. */
+    for (sp_thread **pp = &g_blocked_with_deadline; *pp; ) {
+      sp_thread *t = *pp;
+      if (t->wake_deadline <= now) {
+        *pp = t->deadline_next; t->deadline_next = NULL;
+        /* Unlink from the underlying waitlist (e.g. t->joiners) so a late
+           waker does not try to schedule a thread that is already runnable. */
+        if (t->wait_head) {
+          for (sp_thread **qq = t->wait_head; *qq; qq = &(*qq)->wait_next) {
+            if (*qq == t) { *qq = t->wait_next; break; }
+          }
+          t->wait_next = NULL; t->wait_head = NULL;
+        }
+        if (t == &g_main_thread) { t->state = SP_TH_RUNNABLE; SCHED_WAKE_ALL(); }
+        else if (t->off_cpu) { t->state = SP_TH_RUNNABLE; runq_requeue(t); sp_sched_wake_for(t); }
+        else t->wake_pending = 1;
+      }
+      else {
+        if (nearest == 0.0 || t->wake_deadline < nearest) nearest = t->wake_deadline;
+        pp = &t->deadline_next;
       }
     }
     /* Timeslice enforcement: flag any worker over the quantum, once per slice. */
@@ -1402,6 +1423,61 @@ static void sp_sched_block(sp_thread **waitlist) {   /* PRE/POST: sched lock hel
   }
 }
 
+/* Block on `waitlist` with a deadline: the thread is parked on the waitlist
+   (so a waker via sp_sched_wake_one -- typically the target thread's death
+   path -- unblocks it immediately) AND on g_blocked_with_deadline (so the
+   monitor unblocks it when `seconds` elapses). Whichever fires first wins.
+   The thread is responsible for removing itself from g_blocked_with_deadline
+   on wakeup, so the monitor never tries to wake a thread that is no longer
+   parked there. PRE: sched lock held. POST: lock held. */
+static void sp_sched_block_timeout(sp_thread **waitlist, double seconds) {
+  sp_thread *self = g_current;
+  if (self != &g_main_thread && self->fiber && sp_fiber_inject_pending(self->fiber)) {
+    SCHED_UNLOCK();
+    sp_fiber_fire_inject_if_pending();   /* raises; does not return */
+    SCHED_LOCK();
+  }
+  self->state = SP_TH_BLOCKED;
+  self->off_cpu = 0;
+  self->wake_pending = 0;
+  self->wait_next = *waitlist;
+  self->wait_head = waitlist;
+  *waitlist = self;
+  /* Also enqueue on the deadline list so the monitor can wake us. */
+  self->wake_deadline = sp_monotonic_now() + seconds;
+  self->deadline_next = g_blocked_with_deadline;
+  g_blocked_with_deadline = self;
+  if (self == &g_main_thread) {
+    sp_sched_pump(NULL, 1);
+    if (self->state != SP_TH_RUNNING) {
+      SCHED_UNLOCK();
+      sp_raise_cls("ThreadError", "deadlock detected: all threads blocked");
+    }
+  }
+  else {
+    void *exc_snap = sp_exc_ctx_new();
+    sp_exc_ctx_save(exc_snap);
+    SCHED_UNLOCK();
+    sp_Fiber_transfer(sp_fiber_worker_root(), sp_box_nil());
+    sp_exc_ctx_load(exc_snap);
+    sp_exc_ctx_free(exc_snap);
+    sp_fiber_fire_inject_if_pending();
+    SCHED_LOCK();
+  }
+}
+
+/* Remove `t` from g_blocked_with_deadline. Idempotent: a thread that was
+   already removed (because the waitlist woke it) has wait_head == NULL and
+   we skip. PRE: sched lock held. */
+static void sp_sched_unblock_deadline(sp_thread *t) {
+  if (!t->deadline_next && g_blocked_with_deadline != t) return;
+  for (sp_thread **pp = &g_blocked_with_deadline; *pp; ) {
+    if (*pp == t) { *pp = t->deadline_next; break; }
+    pp = &(*pp)->deadline_next;
+  }
+  t->deadline_next = NULL;
+}
+
 /* Move one thread off `*waitlist` back onto the run queue (or mark the main
    thread runnable so its pump returns). Returns the woken thread, or NULL. */
 static sp_thread *sp_sched_wake_one(sp_thread **waitlist) {
@@ -1410,6 +1486,9 @@ static sp_thread *sp_sched_wake_one(sp_thread **waitlist) {
   *waitlist = t->wait_next;
   t->wait_next = NULL;
   t->wait_head = NULL;
+  /* If the thread also registered a deadline, drop it -- the monitor must
+     not try to wake a thread that is already running. */
+  sp_sched_unblock_deadline(t);
   if (t == &g_main_thread) { t->state = SP_TH_RUNNABLE; SCHED_WAKE_ALL(); return t; }  /* broadcast: a signal could wake a helper instead of main */
   if (t->off_cpu) { t->state = SP_TH_RUNNABLE; runq_requeue(t); }   /* fully parked: enqueue now */
   else { t->wake_pending = 1; }   /* still switching out: its worker enqueues it once off-cpu */

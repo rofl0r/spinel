@@ -49,6 +49,7 @@ typedef struct sp_thread {
   struct sp_thread *joiners;     /* threads parked in #join/#value on this one */
   struct sp_thread *wait_next;   /* link within the wait list it is parked on */
   struct sp_thread **wait_head;  /* head of that wait list, so #kill/#raise can unpark it */
+  struct sp_thread *deadline_next; /* link within g_blocked_with_deadline (joiner timeouts) */
   struct sp_thread *all_next, *all_prev;  /* registry of live threads (GC roots) */
   void             *tls;         /* thread-local storage (Thread#[] / #[]=); lazily allocated */
   double            wake_deadline; /* CLOCK_MONOTONIC time to wake a sleeping thread (Kernel#sleep) */
