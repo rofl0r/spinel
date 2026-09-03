@@ -843,20 +843,23 @@ sp_thread *sp_Thread_join_timeout(sp_thread *t, double seconds) {
   if (dead) { sp_thread_reraise_if_exc(t); return t; }
 
   if (seconds <= 0) return NULL;
-  /* sp_sleep dispatches to sp_sched_sleep in the MT build and to a
-     plain nanosleep in the ST build, so the same call site works
-     regardless of whether threads are compiled in. The MT path
-     parks on g_sleepers with a deadline; the monitor wakes us.
-     The ST path is unreachable in practice (Thread#join is a
-     threaded method and the codegen only emits this symbol when
-     the test uses threads, which the test runner routes to the
-     MT build via SPINEL_USES_THREADS), but the function must
-     still resolve at link time. */
-  sp_sleep(seconds);
-  SCHED_LOCK();
-  dead = (t->state == SP_TH_DEAD);
-  SCHED_UNLOCK();
-  if (dead) { sp_thread_reraise_if_exc(t); return t; }
+  /* Poll with bounded sp_sleep chunks. Each chunk parks the caller on
+     g_sleepers with a short deadline (the monitor wakes it), so the
+     scheduler runs other threads and there is no CPU burn. Between
+     sleeps we recheck the target's state and return early if it has
+     finished. The chunk size is the responsiveness bound: smaller
+     values react faster to the target dying but wake more often.
+     1ms matches the g_sleepers' monitor tick granularity. */
+  double remaining = seconds;
+  while (remaining > 0) {
+    double chunk = remaining < 0.001 ? remaining : 0.001;
+    sp_sleep(chunk);
+    SCHED_LOCK();
+    dead = (t->state == SP_TH_DEAD);
+    SCHED_UNLOCK();
+    if (dead) { sp_thread_reraise_if_exc(t); return t; }
+    remaining -= chunk;
+  }
   return NULL;
 }
 
